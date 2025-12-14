@@ -5,8 +5,8 @@ spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/concurrency?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
-    username: username
-    password: password
+    username: concurrency
+    password: concurrency
     hikari:
       maximum-pool-size: 10
       minimum-idle: 5

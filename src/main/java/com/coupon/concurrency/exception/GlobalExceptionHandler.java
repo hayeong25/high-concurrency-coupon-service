@@ -45,20 +45,6 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 쿠폰 미존재 예외 처리
-     *
-     * @param e 쿠폰 미존재 예외
-     * @return 에러 응답
-     */
-    @ExceptionHandler(CouponNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleCouponNotFound(CouponNotFoundException e) {
-        log.warn("쿠폰 없음: {}", e.getMessage());
-        return ResponseEntity
-                .status(HttpStatus.NOT_FOUND)
-                .body(ErrorResponse.of("COUPON_NOT_FOUND", e.getMessage()));
-    }
-
-    /**
      * 사용자 미존재 예외 처리
      *
      * @param e 사용자 미존재 예외
@@ -70,20 +56,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("USER_NOT_FOUND", e.getMessage()));
-    }
-
-    /**
-     * 쿠폰 발급 불가 예외 처리
-     *
-     * @param e 쿠폰 발급 불가 예외
-     * @return 에러 응답
-     */
-    @ExceptionHandler(CouponNotAvailableException.class)
-    public ResponseEntity<ErrorResponse> handleCouponNotAvailable(CouponNotAvailableException e) {
-        log.warn("쿠폰 발급 기간 아님: {}", e.getMessage());
-        return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
-                .body(ErrorResponse.of("COUPON_NOT_AVAILABLE", e.getMessage()));
     }
 
     /**

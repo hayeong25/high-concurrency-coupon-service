@@ -47,7 +47,7 @@
 | Category  |     Technology     |
 |:---------:|:------------------:|
 | Language  |      Java 21       |
-| Framework | Spring Boot 4.0.0  |
+| Framework | Spring Boot 3.4.1  |
 | Database  |     MySQL 8.0      |
 | Cache     |       Redis        |
 | Infra     |        AWS         |

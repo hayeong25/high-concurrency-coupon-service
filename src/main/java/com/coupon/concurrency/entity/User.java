@@ -18,4 +18,18 @@ public class User {
 
     @Column(nullable = false, updatable = false)
     private Instant createTime;
+
+    private User(Instant createTime) {
+        this.createTime = createTime;
+    }
+
+    /**
+     * 새로운 사용자를 생성한다.
+     * 생성 시점의 시간이 자동으로 기록된다.
+     *
+     * @return 생성된 사용자
+     */
+    public static User create() {
+        return new User(Instant.now());
+    }
 }

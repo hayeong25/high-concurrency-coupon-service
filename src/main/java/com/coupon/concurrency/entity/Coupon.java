@@ -25,19 +25,19 @@ public class Coupon {
     @Column(name = "coupon_code", nullable = false, length = 12)
     private String couponCode;
 
-    @Column(nullable = false)
+    @Column(name = "name", nullable = false)
     private String name;
 
-    @Column(nullable = false)
+    @Column(name = "is_issued", nullable = false)
     private boolean isIssued;
 
     @Version
     private Long version;
 
-    @Column(nullable = false, updatable = false)
+    @Column(name = "create_time", nullable = false, updatable = false)
     private Instant createTime;
 
-    @Column(nullable = false)
+    @Column(name = "update_time")
     private Instant updateTime;
 
     @PrePersist

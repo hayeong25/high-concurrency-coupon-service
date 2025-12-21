@@ -21,7 +21,7 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class CouponService {
-    private static final int TOTAL_COUPON_COUNT = 5000;
+    private static final int TOTAL_COUPON_COUNT = 1000;
     private static final int COUPON_CODE_LENGTH = 12;
     private static final String COUPON_CODE_CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final String DEFAULT_COUPON_NAME = "10,000원 할인 쿠폰";
@@ -35,7 +35,7 @@ public class CouponService {
     /**
      * 쿠폰을 생성한다.
      * 기존의 모든 쿠폰 발급 이력과 쿠폰 데이터를 삭제하고,
-     * 5,000개의 새로운 쿠폰을 일괄 생성한다.
+     * 1,000개의 새로운 쿠폰을 일괄 생성한다.
      * 각 쿠폰은 12자리의 랜덤 쿠폰 번호(영문 대문자 + 숫자)를 가진다.
      *
      * @return 생성된 쿠폰 개수
@@ -50,7 +50,7 @@ public class CouponService {
 
         log.info("기존 데이터 삭제 완료");
 
-        // 5,000개 쿠폰 생성
+        // 1,000개 쿠폰 생성
         List<Coupon> coupons = new ArrayList<>(TOTAL_COUPON_COUNT);
         for (int i = 0; i < TOTAL_COUPON_COUNT; i++) {
             Coupon coupon = Coupon.builder()

@@ -33,7 +33,7 @@
 구축하려는 쿠폰 발급 시스템의 요구사항은 다음과 같습니다.
 
 - 매일 오전 10시에 쿠폰 발급 버튼 활성화
-- 선착순 **5,000명**에게만 10,000원 할인 쿠폰 발급
+- 선착순 **1,000명**에게만 10,000원 할인 쿠폰 발급
 - 수량 소진 시 이벤트 즉시 마감
 - **목표 TPS: 10,000+**
   <br>
@@ -71,7 +71,7 @@
 | **높은 TPS 달성** | 초당 10,000건 이상의 요청 처리            | 사용자 경험, 이벤트 성공 |
 | **낮은 응답 시간**  | 밀리초 단위의 빠른 응답                   | 사용자 이탈 방지      |
 | **시스템 안정성**   | 트래픽 폭주에도 서버 다운 방지               | 서비스 신뢰도        |
-| **데이터 정합성**   | 정확히 5,000개만 발급 (Overselling 방지) | 비즈니스 손실 방지     |
+| **데이터 정합성**   | 정확히 1,000개만 발급 (Overselling 방지) | 비즈니스 손실 방지     |
 
 <br>
 
@@ -364,9 +364,9 @@ Redis 분산 락으로 성능이 향상되었지만, 아직 해결되지 않은 
 [문제 상황]
 
 총 요청: 10,000건
-쿠폰 수량: 5,000개
+쿠폰 수량: 1,000개
 
-→ 5,001번째 이후 요청도 모두 서버에 도달
+→ 1,001번째 이후 요청도 모두 서버에 도달
 → 락 획득 시도 후 재고 없음 확인
 → 불필요한 리소스 사용
 ```
@@ -424,7 +424,7 @@ Redis 분산 락으로 DB 병목은 해소되었지만,
 public class CouponService {
 
     private final StringRedisTemplate redisTemplate;
-    private static final int MAX_COUPON_COUNT = 5000;
+    private static final int MAX_COUPON_COUNT = 1000;
 
     public CouponResult tryIssueCoupon(Long couponId, Long userId) {
         String key = "coupon:count:" + couponId;
@@ -433,10 +433,10 @@ public class CouponService {
         Long count = redisTemplate.opsForValue().increment(key);
 
         if (count <= MAX_COUPON_COUNT) {
-            // 선착순 5,000명 이내 → 발급 진행
+            // 선착순 1,000명 이내 → 발급 진행
             return CouponResult.SUCCESS;
         } else {
-            // 5,001번째 이후 → 즉시 거절 (DB 접근 없음)
+            // 1,001번째 이후 → 즉시 거절 (DB 접근 없음)
             redisTemplate.opsForValue().decrement(key);
             return CouponResult.SOLD_OUT;
         }
@@ -452,12 +452,12 @@ public class CouponService {
 [트래픽 흐름 비교]
 
 Phase 2:
-요청 10,000건 → 서버 10,000건 처리 → DB 5,000건 접근
+요청 10,000건 → 서버 10,000건 처리 → DB 1,000건 접근
 
 Phase 3:
-요청 10,000건 → Redis 필터링 → 서버 5,000건만 처리 → DB 5,000건 접근
+요청 10,000건 → Redis 필터링 → 서버 1,000건만 처리 → DB 1,000건 접근
                     ↓
-              5,000건 즉시 거절 (Fast Fail)
+              9,000건 즉시 거절 (Fast Fail)
 ```
 
 <br>
@@ -468,7 +468,7 @@ Phase 3:
 
 - 동시 사용자: 10,000명
 - 총 요청: 100,000건
-- 쿠폰 수량: 5,000개
+- 쿠폰 수량: 1,000개
   <br>
 
 **[테스트 결과 - 업데이트 예정]**
@@ -477,8 +477,8 @@ Phase 3:
 |-----------------|:-------:|:-------:|:---:|
 | **TPS**         |    -    |    -    |  -  |
 | **Avg Latency** |    -    |    -    |  -  |
-| **성공 발급**       |    -    | 5,000건  |  -  |
-| **Fast Fail**   |    -    | 95,000건 |  -  |
+| **성공 발급**       |    -    | 1,000건  |  -  |
+| **Fast Fail**   |    -    | 99,000건 |  -  |
 | **서버 안정성**      |    -    |   정상    |  -  |
 
 <br>

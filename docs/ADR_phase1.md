@@ -26,6 +26,76 @@
 | **동시성 제어** | 비관적 락 (Pessimistic Lock) |
 | **쿠폰 수량** | 1,000개 |
 
+### 1.3 nGrinder Script
+```
+import static net.grinder.script.Grinder.grinder
+import static org.junit.Assert.*
+import static org.hamcrest.Matchers.*
+import net.grinder.script.GTest
+import net.grinder.script.Grinder
+import net.grinder.scriptengine.groovy.junit.GrinderRunner
+import net.grinder.scriptengine.groovy.junit.annotation.BeforeProcess
+import net.grinder.scriptengine.groovy.junit.annotation.BeforeThread
+import org.junit.Before
+import org.junit.BeforeClass
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.ngrinder.http.HTTPRequest
+import org.ngrinder.http.HTTPRequestControl
+import org.ngrinder.http.HTTPResponse
+import org.ngrinder.http.cookie.Cookie
+import org.ngrinder.http.cookie.CookieManager
+
+  @RunWith(GrinderRunner)
+  class TestRunner {
+
+      public static GTest test
+      public static HTTPRequest request
+      public static Map<String, String> headers = [:]
+      public static List<Cookie> cookies = []
+      public static String baseUrl = "http://host.docker.internal:8081"
+      Long myUserId
+
+      @BeforeProcess
+      public static void beforeProcess() {
+          HTTPRequestControl.setConnectionTimeout(300000)
+          test = new GTest(1, "Coupon Issue Test")
+          request = new HTTPRequest()
+          headers.put("Content-Type", "application/json")
+          grinder.logger.info("before process.")
+      }
+
+      @BeforeThread
+      public void beforeThread() {
+          test.record(this, "test")
+          grinder.statistics.delayReports = true
+          request.setHeaders(headers)
+          HTTPResponse response = request.POST(baseUrl + "/api/v1/user/register", [:], [])
+          if (response.statusCode == 200) {
+              def json = new groovy.json.JsonSlurper().parseText(response.getBodyText())
+              myUserId = json.userId
+          } else {
+              myUserId = null
+          }
+          grinder.logger.info("before thread. userId=" + myUserId)
+      }
+
+      @Before
+      public void before() {
+          request.setHeaders(headers)
+          CookieManager.addCookies(cookies)
+      }
+
+      @Test
+      public void test() {
+          if (myUserId == null) { return }
+          String body = "{\"userId\": " + myUserId + "}"
+          HTTPResponse response = request.POST(baseUrl + "/api/v1/coupon/issue/pessimistic", body.getBytes(), [])
+          assertThat(response.statusCode, anyOf(is(200), is(409), is(410)))
+      }
+  }
+```
+
 ---
 
 ## 2. 테스트 결과 요약

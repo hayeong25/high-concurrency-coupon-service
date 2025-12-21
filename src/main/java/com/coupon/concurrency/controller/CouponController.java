@@ -46,6 +46,21 @@ public class CouponController {
     }
 
     /**
+     * Redis 분산 락을 사용하여 쿠폰을 발급한다.
+     * Redisson의 RLock을 활용하여 분산 환경에서 동시성을 제어한다.
+     * DB 락 대신 Redis 락을 사용하여 DB 부하를 줄인다.
+     *
+     * @param request 쿠폰 발급 요청 (userId)
+     * @return 쿠폰 발급 응답
+     */
+    @PostMapping("/issue/redis")
+    public ResponseEntity<CouponIssueResponse> issueWithRedisLock(@Valid @RequestBody CouponIssueRequest request) {
+        log.info("쿠폰 발급 요청 (Redis 분산 락) - userId: {}", request.userId());
+        CouponIssueResponse response = couponService.issueWithRedisLock(request.userId());
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * 쿠폰의 남은 수량을 조회한다.
      *
      * @return 남은 수량

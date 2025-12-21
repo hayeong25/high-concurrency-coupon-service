@@ -10,12 +10,15 @@ import com.coupon.concurrency.repository.CouponRepository;
 import com.coupon.concurrency.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -25,10 +28,15 @@ public class CouponService {
     private static final int COUPON_CODE_LENGTH = 12;
     private static final String COUPON_CODE_CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final String DEFAULT_COUPON_NAME = "10,000원 할인 쿠폰";
+    private static final String COUPON_LOCK_KEY = "coupon:lock";
+    private static final long LOCK_WAIT_TIME = 30L;
+    private static final long LOCK_LEASE_TIME = 30L;
 
     private final UserRepository userRepository;
     private final CouponRepository couponRepository;
     private final CouponIssueRepository couponIssueRepository;
+    private final RedissonClient redissonClient;
+    private final CouponTransactionService couponTransactionService;
 
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -123,6 +131,54 @@ public class CouponService {
         log.info("쿠폰 발급 완료 (비관적 락) - userId: {}, couponId: {}, 잔여 수량: {}", userId, coupon.getId(), couponRepository.countAvailableCoupons());
 
         return CouponIssueResponse.from(couponIssue);
+    }
+
+    /**
+     * Redis 분산 락(Distributed Lock)을 사용하여 쿠폰을 발급한다.
+     * Redisson의 RLock을 활용하여 분산 환경에서 동시성을 제어한다.
+     * DB 락 대신 Redis 락을 사용하여 DB 부하를 줄인다.
+     *
+     * @param userId 발급받을 사용자 ID
+     * @return 쿠폰 발급 응답
+     * @throws UserNotFoundException     사용자를 찾을 수 없는 경우
+     * @throws AlreadyIssuedException    이미 발급받은 경우
+     * @throws CouponSoldOutException    쿠폰이 소진된 경우
+     * @throws LockAcquisitionException  락 획득에 실패한 경우
+     */
+    public CouponIssueResponse issueWithRedisLock(Long userId) {
+        log.debug("Redis 분산 락으로 쿠폰 발급 시도 - userId: {}", userId);
+
+        // 사용자 조회 (락 획득 전에 빠른 검증)
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+
+        // 중복 발급 체크 (락 획득 전에 빠른 검증)
+        if (couponIssueRepository.existsByUserId(userId)) {
+            throw new AlreadyIssuedException(userId);
+        }
+
+        RLock lock = redissonClient.getLock(COUPON_LOCK_KEY);
+
+        try {
+            // 락 획득 시도 (waitTime: 30초, leaseTime: 30초)
+            boolean acquired = lock.tryLock(LOCK_WAIT_TIME, LOCK_LEASE_TIME, TimeUnit.SECONDS);
+
+            if (!acquired) {
+                throw new LockAcquisitionException();
+            }
+
+            // 락 획득 성공 - 별도 서비스에서 트랜잭션 처리
+            return couponTransactionService.issueInTransaction(user);
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new LockAcquisitionException("락 획득 중 인터럽트가 발생했습니다.");
+        } finally {
+            // 락 해제 (현재 스레드가 보유한 경우에만)
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
     }
 
     /**

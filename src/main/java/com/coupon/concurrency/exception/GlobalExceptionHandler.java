@@ -58,6 +58,20 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * 분산 락 획득 실패 예외 처리
+     *
+     * @param e 락 획득 실패 예외
+     * @return 에러 응답
+     */
+    @ExceptionHandler(LockAcquisitionException.class)
+    public ResponseEntity<ErrorResponse> handleLockAcquisition(LockAcquisitionException e) {
+        log.warn("락 획득 실패: {}", e.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ErrorResponse.of("LOCK_ACQUISITION_FAILED", e.getMessage()));
+    }
+
+    /**
      * 유효성 검증 실패 예외 처리
      *
      * @param e 유효성 검증 실패 예외

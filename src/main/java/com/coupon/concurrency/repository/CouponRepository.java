@@ -20,6 +20,15 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
     Optional<Coupon> findFirstAvailableWithPessimisticLock();
 
     /**
+     * 락 없이 발급 가능한 첫 번째 쿠폰을 조회한다.
+     * Redis 분산 락 사용 시 활용된다.
+     *
+     * @return 발급 가능한 쿠폰 엔티티
+     */
+    @Query("SELECT c FROM Coupon c WHERE c.isIssued = false ORDER BY c.id ASC LIMIT 1")
+    Optional<Coupon> findFirstAvailable();
+
+    /**
      * 발급 가능한 쿠폰의 잔여 수량을 조회한다.
      * 아직 발급되지 않은 쿠폰의 개수를 반환한다.
      *

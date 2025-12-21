@@ -20,16 +20,6 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
     Optional<Coupon> findFirstAvailableWithPessimisticLock();
 
     /**
-     * 낙관적 락을 사용하여 발급 가능한 첫 번째 쿠폰을 조회한다.
-     * 아직 발급되지 않은 쿠폰 중 가장 작은 ID를 가진 쿠폰을 조회한다.
-     *
-     * @return 발급 가능한 쿠폰 엔티티
-     */
-    @Lock(LockModeType.OPTIMISTIC)
-    @Query("SELECT c FROM Coupon c WHERE c.isIssued = false ORDER BY c.id ASC LIMIT 1")
-    Optional<Coupon> findFirstAvailableWithOptimisticLock();
-
-    /**
      * 발급 가능한 쿠폰의 잔여 수량을 조회한다.
      * 아직 발급되지 않은 쿠폰의 개수를 반환한다.
      *

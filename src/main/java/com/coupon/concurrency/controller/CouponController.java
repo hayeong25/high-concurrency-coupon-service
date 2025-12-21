@@ -46,19 +46,6 @@ public class CouponController {
     }
 
     /**
-     * 낙관적 락을 사용하여 쿠폰을 발급한다.
-     *
-     * @param request 쿠폰 발급 요청 (userId)
-     * @return 쿠폰 발급 응답
-     */
-    @PostMapping("/issue/optimistic")
-    public ResponseEntity<CouponIssueResponse> issueWithOptimisticLock(@Valid @RequestBody CouponIssueRequest request) {
-        log.info("쿠폰 발급 요청 (낙관적 락) - userId: {}", request.userId());
-        CouponIssueResponse response = couponService.issueWithOptimisticLock(request.userId());
-        return ResponseEntity.ok(response);
-    }
-
-    /**
      * 쿠폰의 남은 수량을 조회한다.
      *
      * @return 남은 수량

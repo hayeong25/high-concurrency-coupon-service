@@ -4,7 +4,6 @@ import com.coupon.concurrency.dto.ErrorResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -56,20 +55,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("USER_NOT_FOUND", e.getMessage()));
-    }
-
-    /**
-     * 낙관적 락 충돌 예외 처리
-     *
-     * @param e 낙관적 락 충돌 예외
-     * @return 에러 응답
-     */
-    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
-    public ResponseEntity<ErrorResponse> handleOptimisticLockingFailure(ObjectOptimisticLockingFailureException e) {
-        log.warn("낙관적 락 충돌 발생: {}", e.getMessage());
-        return ResponseEntity
-                .status(HttpStatus.CONFLICT)
-                .body(ErrorResponse.of("OPTIMISTIC_LOCK_FAILURE", "다른 요청과 충돌이 발생했습니다. 잠시 후 다시 시도해주세요."));
     }
 
     /**

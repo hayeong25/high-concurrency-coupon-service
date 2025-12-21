@@ -69,17 +69,14 @@
 
 ## Development Roadmap
 
-### 📉 Phase 1: 낙관적 락 & 비관적 락 (RDBMS Only)
-- **아키텍처**: `Client` → `Server` → `MySQL (Optimistic/Pessimistic Lock)`
+### 📉 Phase 1: 비관적 락 (RDBMS Only)
+- **아키텍처**: `Client` → `Server` → `MySQL (Pessimistic Lock)`
 - **구현 목표**:
   - 기본적인 쿠폰 발급 기능 구현
-  - JPA의 **낙관적 락(Optimistic Lock)** - Version 기반 동시성 제어
   - JPA의 **비관적 락(Pessimistic Lock)** - DB Lock 기반 동시성 제어
-  - 두 방식의 성능 비교 분석
 - **검증(Test)**: nGrinder로 동시 요청 발생 시 TPS, DB CPU 사용률, 정합성 측정
 - **예상 문제**:
-  - 낙관적 락: 충돌 시 재시도 부하 증가
-  - 비관적 락: 락 대기 시간으로 인한 성능 저하, DB Connection 고갈
+  - 락 대기 시간으로 인한 성능 저하, DB Connection 고갈
 
 ### ⚡ Phase 2: Redis 분산 락 (Distributed Lock)
 - **아키텍처**: `Client` → `Server` → `Redis (Redisson Distributed Lock)` → `MySQL`
@@ -147,7 +144,6 @@
 - **Named Lock (MySQL User-Level Lock)** 비교 테스트
   - `GET_LOCK()` / `RELEASE_LOCK()` 활용
   - 트랜잭션과 독립적으로 동작하는 락 방식
-- 낙관적 락 실패 시 **재시도 전략** 테스트 (재시도 횟수, Exponential Backoff)
 
 </details>
 

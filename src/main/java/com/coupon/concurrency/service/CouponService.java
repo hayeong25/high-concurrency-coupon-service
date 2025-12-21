@@ -126,48 +126,6 @@ public class CouponService {
     }
 
     /**
-     * 낙관적 락(Optimistic Lock)을 사용하여 쿠폰을 발급한다.
-     * Version 컬럼을 통해 동시성 충돌을 감지하고, 충돌 시 예외가 발생한다.
-     * 발급 가능한 쿠폰 중 가장 작은 ID를 가진 쿠폰을 선착순으로 발급한다.
-     *
-     * @param userId 발급받을 사용자 ID
-     * @return 쿠폰 발급 응답
-     * @throws UserNotFoundException  사용자를 찾을 수 없는 경우
-     * @throws AlreadyIssuedException 이미 발급받은 경우
-     * @throws CouponSoldOutException 쿠폰이 소진된 경우
-     */
-    @Transactional
-    public CouponIssueResponse issueWithOptimisticLock(Long userId) {
-        log.debug("낙관적 락으로 쿠폰 발급 시도 - userId: {}", userId);
-
-        // 사용자 조회
-        User user = userRepository.findById(userId).orElseThrow(() -> new UserNotFoundException(userId));
-
-        // 중복 발급 체크 (1인 1쿠폰 제한)
-        if (couponIssueRepository.existsByUserId(userId)) {
-            throw new AlreadyIssuedException(userId);
-        }
-
-        // 낙관적 락으로 발급 가능한 첫 번째 쿠폰 조회
-        Coupon coupon = couponRepository.findFirstAvailableWithOptimisticLock()
-                .orElseThrow(CouponSoldOutException::new);
-
-        // 쿠폰 발급 처리
-        coupon.issue();
-
-        // 발급 이력 저장
-        CouponIssue couponIssue = CouponIssue.builder()
-                .user(user)
-                .coupon(coupon)
-                .build();
-        couponIssueRepository.save(couponIssue);
-
-        log.info("쿠폰 발급 완료 (낙관적 락) - userId: {}, couponId: {}, 잔여 수량: {}", userId, coupon.getId(), couponRepository.countAvailableCoupons());
-
-        return CouponIssueResponse.from(couponIssue);
-    }
-
-    /**
      * 발급 가능한 쿠폰의 잔여 수량을 조회한다.
      * 아직 발급되지 않은 쿠폰의 개수를 반환한다.
      *

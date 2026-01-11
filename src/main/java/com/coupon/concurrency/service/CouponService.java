@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RAtomicLong;
 import org.redisson.api.RLock;
+import org.redisson.api.RSet;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +32,7 @@ public class CouponService {
     private static final String DEFAULT_COUPON_NAME = "10,000원 할인 쿠폰";
     private static final String COUPON_LOCK_KEY = "coupon:lock";
     private static final String COUPON_COUNT_KEY = "coupon:count";
+    private static final String COUPON_ISSUED_USERS_KEY = "coupon:issued:users";
     private static final long LOCK_WAIT_TIME = 30L;
     private static final long LOCK_LEASE_TIME = 30L;
 
@@ -81,13 +83,19 @@ public class CouponService {
     }
 
     /**
-     * Redis 쿠폰 카운터를 초기화한다.
-     * Phase 3 Rate Limiting에서 사용하는 원자적 카운터를 0으로 리셋한다.
+     * Redis 쿠폰 관련 데이터를 초기화한다.
+     * Phase 3/4에서 사용하는 카운터와 발급 사용자 SET을 리셋한다.
      */
     private void resetCouponCounter() {
+        // 카운터 초기화
         RAtomicLong counter = redissonClient.getAtomicLong(COUPON_COUNT_KEY);
         counter.set(0);
         log.info("Redis 쿠폰 카운터 초기화 완료 - key: {}", COUPON_COUNT_KEY);
+
+        // 발급 사용자 SET 초기화 (Phase 4)
+        RSet<Long> issuedUsers = redissonClient.getSet(COUPON_ISSUED_USERS_KEY);
+        issuedUsers.delete();
+        log.info("Redis 발급 사용자 SET 초기화 완료 - key: {}", COUPON_ISSUED_USERS_KEY);
     }
 
     /**
@@ -246,6 +254,84 @@ public class CouponService {
         } catch (CouponSoldOutException e) {
             // DB에서 쿠폰 없음 (데이터 불일치 시) - 카운터 롤백
             counter.decrementAndGet();
+            throw e;
+        }
+    }
+
+    /**
+     * Phase 4: 최적화된 Redis 기반 쿠폰 발급.
+     * Redis 체크를 먼저 수행하여 불필요한 DB 접근을 최소화한다.
+     *
+     * <p>처리 순서:</p>
+     * <ol>
+     *   <li>Redis 카운터 체크 (선착순 1,000명 초과 시 Fast Fail)</li>
+     *   <li>Redis SET으로 중복 발급 체크 (이미 발급받은 사용자 즉시 거절)</li>
+     *   <li>사용자 검증 (DB)</li>
+     *   <li>쿠폰 발급 (DB)</li>
+     * </ol>
+     *
+     * <p>개선 효과:</p>
+     * <ul>
+     *   <li>쿠폰 소진 후 요청: Redis에서 즉시 거절 (DB 접근 없음)</li>
+     *   <li>중복 발급 요청: Redis에서 즉시 거절 (DB 접근 없음)</li>
+     *   <li>유효한 요청만 DB 접근</li>
+     * </ul>
+     *
+     * @param userId 발급받을 사용자 ID
+     * @return 쿠폰 발급 응답
+     * @throws AlreadyIssuedException 이미 발급받은 경우 (Redis SET 체크)
+     * @throws CouponSoldOutException 쿠폰이 소진된 경우 (Fast Fail)
+     * @throws UserNotFoundException  사용자를 찾을 수 없는 경우
+     */
+    public CouponIssueResponse issueWithOptimizedRateLimiting(Long userId) {
+        log.debug("최적화된 유량 제어로 쿠폰 발급 시도 - userId: {}", userId);
+
+        // 1. Redis 원자적 카운터로 선착순 체크 (Fast Fail - DB 접근 없음)
+        RAtomicLong counter = redissonClient.getAtomicLong(COUPON_COUNT_KEY);
+        long currentCount = counter.incrementAndGet();
+
+        if (currentCount > TOTAL_COUPON_COUNT) {
+            counter.decrementAndGet();
+            log.info("쿠폰 소진 (Fast Fail) - userId: {}, currentCount: {}", userId, currentCount);
+            throw new CouponSoldOutException();
+        }
+
+        // 2. Redis SET으로 중복 발급 체크 (Fast Fail - DB 접근 없음)
+        RSet<Long> issuedUsers = redissonClient.getSet(COUPON_ISSUED_USERS_KEY);
+        boolean isNewUser = issuedUsers.add(userId);
+
+        if (!isNewUser) {
+            // 이미 발급받은 사용자 - 카운터 롤백 후 거절
+            counter.decrementAndGet();
+            log.info("중복 발급 시도 (Fast Fail) - userId: {}", userId);
+            throw new AlreadyIssuedException(userId);
+        }
+
+        try {
+            // 3. 사용자 검증 (DB 접근 - 유효한 요청만 도달)
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> {
+                        // 사용자 없음 - Redis 롤백
+                        counter.decrementAndGet();
+                        issuedUsers.remove(userId);
+                        return new UserNotFoundException(userId);
+                    });
+
+            // 4. 쿠폰 발급 (DB 접근)
+            CouponIssueResponse response = couponTransactionService.issueInTransaction(user);
+            log.info("쿠폰 발급 완료 (최적화) - userId: {}, couponId: {}, 발급 순번: {}",
+                    userId, response.couponId(), currentCount);
+            return response;
+
+        } catch (CouponSoldOutException e) {
+            // DB에서 쿠폰 없음 (데이터 불일치 시) - Redis 롤백
+            counter.decrementAndGet();
+            issuedUsers.remove(userId);
+            throw e;
+        } catch (Exception e) {
+            // 기타 예외 발생 시 - Redis 롤백
+            counter.decrementAndGet();
+            issuedUsers.remove(userId);
             throw e;
         }
     }

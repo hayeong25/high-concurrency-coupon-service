@@ -61,8 +61,8 @@
 ```
 [Phase 1] Client → Server → MySQL (DB Lock)
 [Phase 2] Client → Server → Redis (Distributed Lock) → MySQL
-[Phase 3] Client → Redis (Rate Limiter) → Server → MySQL
-[Phase 4] Performance Optimization & Tuning
+[Phase 3] Client → Server → Redis (Atomic Counter) → MySQL
+[Phase 4] Client → Server → Redis (Counter + SET) → MySQL  ← 현재
 ```
 
 <br>
@@ -99,15 +99,18 @@
   - 불필요한 DB 트래픽 차단으로 서버 보호
 - **검증(Test)**: 대량 접속자 상황에서 Fast Fail 동작 및 데이터 정합성 확인 예정
 
-### 🚀 Phase 4: 최대 TPS 도출 (Performance Optimization)
-- **목표**: 시스템의 최대 처리량(Max TPS) 도출을 위한 효율적인 방법론 정립
-- **수행 내용**:
-  - nGrinder를 활용한 체계적인 부하 테스트 시나리오 설계
-  - 병목 지점 분석 (CPU, Memory, Network, DB Connection Pool)
-  - JVM 튜닝 및 Spring Boot 최적화
-  - AWS 인프라 스케일링 전략 수립
-  - 최적의 TPS 도출 및 한계점 분석
-- **검증(Test)**: 다양한 부하 조건에서의 성능 측정 및 리포팅
+### 🚀 Phase 4: 최적화된 Redis 기반 처리 (Optimized)
+- **아키텍처**: `Client` → `Server` → `Redis (Counter + SET)` → `MySQL`
+- **구현 내용**:
+  - **Redis 체크 우선 처리**: 모든 Redis 검증을 DB 접근 전에 수행
+  - **Redis SET 중복 체크**: DB 조회 없이 O(1) 중복 검증
+  - **두 단계 Fast Fail**: 수량 체크 + 중복 체크 모두 Redis에서 처리
+- **API 엔드포인트**: `POST /api/v1/coupon/issue/optimized`
+- **핵심 개선**:
+  - 쿠폰 소진 후 요청: Redis에서 즉시 거절 (DB 접근 0회)
+  - 중복 발급 요청: Redis SET에서 즉시 거절 (DB 접근 0회)
+  - 유효한 요청만 DB에 도달
+- **검증(Test)**: nGrinder 부하 테스트 예정
 
 <br>
 
@@ -172,7 +175,10 @@
 <details>
 <summary><b>Phase 4 관련</b></summary>
 
-- 다양한 부하 테스트 방법론 적용
+- **Kafka 기반 비동기 처리**
+  - 쿠폰 발급을 이벤트로 처리하여 더 높은 TPS 달성
+  - Redis에서 즉시 응답 후 백그라운드로 DB 저장
+- **다양한 부하 테스트 방법론 적용**
   - Ramp-up 테스트: 점진적 부하 증가로 한계점 도출
   - Stress 테스트: 한계 초과 시 시스템 동작 확인
   - Endurance 테스트: 장시간 부하에서 메모리 누수 확인

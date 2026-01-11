@@ -76,6 +76,28 @@ public class CouponController {
     }
 
     /**
+     * Phase 4: 최적화된 Redis 기반 쿠폰 발급.
+     * Redis 체크를 먼저 수행하여 불필요한 DB 접근을 최소화한다.
+     *
+     * <p>처리 순서:</p>
+     * <ol>
+     *   <li>Redis 카운터 체크 (선착순 1,000명 초과 시 Fast Fail)</li>
+     *   <li>Redis SET으로 중복 발급 체크 (이미 발급받은 사용자 즉시 거절)</li>
+     *   <li>사용자 검증 (DB)</li>
+     *   <li>쿠폰 발급 (DB)</li>
+     * </ol>
+     *
+     * @param request 쿠폰 발급 요청 (userId)
+     * @return 쿠폰 발급 응답
+     */
+    @PostMapping("/issue/optimized")
+    public ResponseEntity<CouponIssueResponse> issueWithOptimizedRateLimiting(@Valid @RequestBody CouponIssueRequest request) {
+        log.info("쿠폰 발급 요청 (최적화) - userId: {}", request.userId());
+        CouponIssueResponse response = couponService.issueWithOptimizedRateLimiting(request.userId());
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * 쿠폰의 남은 수량을 조회한다.
      *
      * @return 남은 수량

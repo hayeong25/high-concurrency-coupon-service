@@ -110,7 +110,7 @@
   - 쿠폰 소진 후 요청: Redis에서 즉시 거절 (DB 접근 0회)
   - 중복 발급 요청: Redis SET에서 즉시 거절 (DB 접근 0회)
   - 유효한 요청만 DB에 도달
-- **검증(Test)**: nGrinder 부하 테스트 예정
+- **검증(Test)**: nGrinder 부하 테스트 완료 - 응답시간 34.5% 개선
 
 <br>
 
@@ -120,10 +120,13 @@
 
 | 지표 | Phase 1 (DB Lock) | Phase 2 (Redis Lock) | Phase 3 (Rate Limit) | Phase 4 (Optimized) |
 |:---|:---:|:---:|:---:|:---:|
-| **Max TPS** | - | - | - | - |
-| **Avg Latency** | - | - | - | - |
-| **Fail Rate** | - | - | - | - |
-| **Pain Point** | DB 병목 | 락 획득 대기 | 대기 시간 발생 | - |
+| **VUser** | 600 | 1,500 | 600 | 300 |
+| **Avg TPS** | 24.6 | 39.3 | 26.3 | 23.1 |
+| **Max TPS** | 47.5 | 60.0 | 83.5 | 63.0 |
+| **Avg Latency** | 18,942ms | 30,120ms | 20,811ms | **13,619ms** |
+| **Min Latency** | 4,892ms | 7,244ms | 7,057ms | **1,766ms** |
+| **Fail Rate** | 0% | 0% | 0% | 0% |
+| **Pain Point** | DB 병목 | 락 획득 대기 | DB 접근 병목 | DB 쓰기 병목 |
 
 <br>
 

@@ -86,15 +86,18 @@
 - **검증(Test)**: Phase 1 대비 TPS 향상률 및 응답 시간(Latency) 단축 측정
 - **남은 문제**: 락 획득을 위한 스핀락(Spin Lock) 부하, 여전히 DB에 직접 닿는 트래픽 존재
 
-### 🚦 Phase 3: Redis 유량 제어 (Rate Limiting & Traffic Shaping)
-- **아키텍처**: `Client` → `Redis (Rate Limiter / Sorted Set)` → `Token 발급` → `Server`
-- **개선 목표**:
-  - Redis를 활용한 **유량 제어(Rate Limiting)** 구현
-  - 서버가 처리 가능한 만큼만 유입시키는 트래픽 쉐이핑
-  - Token Bucket / Sliding Window 알고리즘 적용
-  - Redis Sorted Set을 활용한 대기열 시스템 구현
-- **검증(Test)**: 대량 접속자 상황에서도 서버가 다운되지 않고 일정하게 처리되는지 확인
-- **핵심 지표**: **"시스템 안정성(Availability)"** 확보
+### 🚦 Phase 3: Redis 유량 제어 (Rate Limiting)
+- **아키텍처**: `Client` → `Redis (Atomic Counter)` → `Server` → `MySQL`
+- **구현 내용**:
+  - **Redis INCR 원자적 카운터** 기반 선착순 제어
+  - **Fast Fail 전략**: 선착순 1,000명 초과 시 즉시 거절 (DB 접근 없음)
+  - 락 없이 원자적 연산만으로 동시성 제어
+- **API 엔드포인트**: `POST /api/v1/coupon/issue/ratelimit`
+- **핵심 개선**:
+  - Phase 2의 단일 글로벌 락 → 락 없는 병렬 처리
+  - 직렬화 처리 → 병렬 처리로 TPS 대폭 향상 기대
+  - 불필요한 DB 트래픽 차단으로 서버 보호
+- **검증(Test)**: 대량 접속자 상황에서 Fast Fail 동작 및 데이터 정합성 확인 예정
 
 ### 🚀 Phase 4: 최대 TPS 도출 (Performance Optimization)
 - **목표**: 시스템의 최대 처리량(Max TPS) 도출을 위한 효율적인 방법론 정립
@@ -129,11 +132,6 @@
 | **Performance Report** | nGrinder 결과 그래프 및 분석 리포트 (Wiki 또는 Blog) |
 | **ADR** | Architecture Decision Record - 각 Phase별 의사결정 근거 문서 |
 
-### 📝 Next Step
-- [ ] Phase 1 환경 구축 (Docker Compose: MySQL, Redis, nGrinder)
-- [ ] 기본 쿠폰 발급 로직(Service Layer) 구현
-- [ ] AWS 인프라 설계 및 배포 환경 구성
-
 <br>
 
 ## Future Work
@@ -161,10 +159,13 @@
 <details>
 <summary><b>Phase 3 관련</b></summary>
 
-- **Redis INCR 원자적 카운터** 방식 테스트
+- **Redis INCR 원자적 카운터** 방식
   - `INCR coupon:count` → 1,000 초과 시 즉시 거절 (Fast Fail)
-  - 락 없이 원자적 수량 제어 가능
-- 유량 제어(서버 보호)와 수량 제어(쿠폰 재고) 분리 설계
+  - Redisson RAtomicLong 활용
+- **추가 개선 가능 사항**:
+  - Sliding Window 기반 Rate Limiter 적용
+  - Redis Sorted Set을 활용한 대기열 시스템
+  - 유량 제어(서버 보호)와 수량 제어(쿠폰 재고) 분리 설계
 
 </details>
 

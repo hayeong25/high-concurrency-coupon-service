@@ -415,34 +415,44 @@ Redis 분산 락으로 DB 병목은 해소되었지만,
 
 ### 구현 방식
 
-**Redis INCR을 활용한 원자적 카운터**
+**Redisson RAtomicLong을 활용한 원자적 카운터**
 
 ```java
-
 @Service
 @RequiredArgsConstructor
 public class CouponService {
 
-    private final StringRedisTemplate redisTemplate;
-    private static final int MAX_COUPON_COUNT = 1000;
+    private final RedissonClient redissonClient;
+    private static final int TOTAL_COUPON_COUNT = 1000;
+    private static final String COUPON_COUNT_KEY = "coupon:count";
 
-    public CouponResult tryIssueCoupon(Long couponId, Long userId) {
-        String key = "coupon:count:" + couponId;
+    public CouponIssueResponse issueWithRateLimiting(Long userId) {
+        // 1. 사용자 검증 (빠른 검증)
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
 
-        // Redis INCR: 원자적 연산으로 동시성 보장
-        Long count = redisTemplate.opsForValue().increment(key);
-
-        if (count <= MAX_COUPON_COUNT) {
-            // 선착순 1,000명 이내 → 발급 진행
-            return CouponResult.SUCCESS;
-        } else {
-            // 1,001번째 이후 → 즉시 거절 (DB 접근 없음)
-            redisTemplate.opsForValue().decrement(key);
-            return CouponResult.SOLD_OUT;
+        // 2. 중복 발급 체크 (빠른 검증)
+        if (couponIssueRepository.existsByUserId(userId)) {
+            throw new AlreadyIssuedException(userId);
         }
+
+        // 3. Redis 원자적 카운터로 선착순 체크 (Fast Fail)
+        RAtomicLong counter = redissonClient.getAtomicLong(COUPON_COUNT_KEY);
+        long currentCount = counter.incrementAndGet();
+
+        if (currentCount > TOTAL_COUPON_COUNT) {
+            // 선착순 실패 - 카운터 롤백 후 즉시 거절
+            counter.decrementAndGet();
+            throw new CouponSoldOutException();
+        }
+
+        // 4. 선착순 성공 - 실제 쿠폰 발급 처리
+        return couponTransactionService.issueInTransaction(user);
     }
 }
 ```
+
+**API 엔드포인트**: `POST /api/v1/coupon/issue/ratelimit`
 
 <br>
 
@@ -699,12 +709,3 @@ RDBMS 기반의 단순한 구현에서 시작해 Redis를 활용한 고성능 �
 
 - [Redisson GitHub](https://github.com/redisson/redisson)
 - [nGrinder GitHub](https://github.com/naver/ngrinder)
-  <br>
-
----
-
-## 변경 이력
-
-|  버전  |     날짜     | 변경 내용 |
-|:----:|:----------:|:-----:|
-| v1.0 | 2025-12-14 | 초안 작성 |

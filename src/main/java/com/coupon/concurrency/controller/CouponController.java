@@ -61,6 +61,21 @@ public class CouponController {
     }
 
     /**
+     * Redis 원자적 카운터를 사용한 유량 제어 방식으로 쿠폰을 발급한다.
+     * Redis INCR의 원자성을 활용하여 락 없이 동시성을 제어한다.
+     * 선착순 1,000명 초과 시 즉시 거절한다. (Fast Fail)
+     *
+     * @param request 쿠폰 발급 요청 (userId)
+     * @return 쿠폰 발급 응답
+     */
+    @PostMapping("/issue/ratelimit")
+    public ResponseEntity<CouponIssueResponse> issueWithRateLimiting(@Valid @RequestBody CouponIssueRequest request) {
+        log.info("쿠폰 발급 요청 (유량 제어) - userId: {}", request.userId());
+        CouponIssueResponse response = couponService.issueWithRateLimiting(request.userId());
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * 쿠폰의 남은 수량을 조회한다.
      *
      * @return 남은 수량

@@ -10,6 +10,7 @@ import com.coupon.concurrency.repository.CouponRepository;
 import com.coupon.concurrency.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RAtomicLong;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ public class CouponService {
     private static final String COUPON_CODE_CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final String DEFAULT_COUPON_NAME = "10,000원 할인 쿠폰";
     private static final String COUPON_LOCK_KEY = "coupon:lock";
+    private static final String COUPON_COUNT_KEY = "coupon:count";
     private static final long LOCK_WAIT_TIME = 30L;
     private static final long LOCK_LEASE_TIME = 30L;
 
@@ -56,7 +58,10 @@ public class CouponService {
         couponIssueRepository.deleteAllInBatch();
         couponRepository.deleteAllInBatch();
 
-        log.info("기존 데이터 삭제 완료");
+        // Redis 카운터 초기화 (Phase 3: Rate Limiting용)
+        resetCouponCounter();
+
+        log.info("기존 데이터 삭제 완료, Redis 카운터 초기화 완료");
 
         // 1,000개 쿠폰 생성
         List<Coupon> coupons = new ArrayList<>(TOTAL_COUPON_COUNT);
@@ -73,6 +78,16 @@ public class CouponService {
         log.info("쿠폰 생성 완료 - 총 {}개 생성됨", TOTAL_COUPON_COUNT);
 
         return TOTAL_COUPON_COUNT;
+    }
+
+    /**
+     * Redis 쿠폰 카운터를 초기화한다.
+     * Phase 3 Rate Limiting에서 사용하는 원자적 카운터를 0으로 리셋한다.
+     */
+    private void resetCouponCounter() {
+        RAtomicLong counter = redissonClient.getAtomicLong(COUPON_COUNT_KEY);
+        counter.set(0);
+        log.info("Redis 쿠폰 카운터 초기화 완료 - key: {}", COUPON_COUNT_KEY);
     }
 
     /**
@@ -178,6 +193,60 @@ public class CouponService {
             if (lock.isHeldByCurrentThread()) {
                 lock.unlock();
             }
+        }
+    }
+
+    /**
+     * Redis 원자적 카운터를 사용한 유량 제어 방식으로 쿠폰을 발급한다.
+     * Redis INCR 명령어의 원자성을 활용하여 동시성을 제어한다.
+     * 락 없이 원자적 연산만으로 선착순 1,000명 제한을 구현한다.
+     *
+     * <p>동작 방식:</p>
+     * <ol>
+     *   <li>Redis 카운터를 원자적으로 증가시킨다.</li>
+     *   <li>카운터 값이 1,000 이하면 쿠폰 발급을 진행한다.</li>
+     *   <li>카운터 값이 1,000을 초과하면 즉시 거절한다. (Fast Fail)</li>
+     * </ol>
+     *
+     * @param userId 발급받을 사용자 ID
+     * @return 쿠폰 발급 응답
+     * @throws UserNotFoundException  사용자를 찾을 수 없는 경우
+     * @throws AlreadyIssuedException 이미 발급받은 경우
+     * @throws CouponSoldOutException 쿠폰이 소진된 경우 (Fast Fail)
+     */
+    public CouponIssueResponse issueWithRateLimiting(Long userId) {
+        log.debug("Redis 유량 제어로 쿠폰 발급 시도 - userId: {}", userId);
+
+        // 사용자 조회 (빠른 검증)
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+
+        // 중복 발급 체크 (빠른 검증)
+        if (couponIssueRepository.existsByUserId(userId)) {
+            throw new AlreadyIssuedException(userId);
+        }
+
+        // Redis 원자적 카운터로 선착순 체크 (Fast Fail)
+        RAtomicLong counter = redissonClient.getAtomicLong(COUPON_COUNT_KEY);
+        long currentCount = counter.incrementAndGet();
+
+        if (currentCount > TOTAL_COUPON_COUNT) {
+            // 선착순 실패 - 카운터 롤백 후 즉시 거절
+            counter.decrementAndGet();
+            log.info("쿠폰 소진 (Fast Fail) - userId: {}, currentCount: {}", userId, currentCount);
+            throw new CouponSoldOutException();
+        }
+
+        try {
+            // 선착순 성공 - 실제 쿠폰 발급 처리
+            CouponIssueResponse response = couponTransactionService.issueInTransaction(user);
+            log.info("쿠폰 발급 완료 (유량 제어) - userId: {}, couponId: {}, 발급 순번: {}",
+                    userId, response.couponId(), currentCount);
+            return response;
+        } catch (CouponSoldOutException e) {
+            // DB에서 쿠폰 없음 (데이터 불일치 시) - 카운터 롤백
+            counter.decrementAndGet();
+            throw e;
         }
     }
 
